@@ -295,6 +295,6 @@ public class read_checkpoint {
             e.printStackTrace();
         }
         
-        System.out.println("\n✅ All tests completed successfully!");
+        System.out.println("\n All tests completed successfully!");
     }
 }
