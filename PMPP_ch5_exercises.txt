@@ -1,0 +1,53 @@
+Q1)
+Matrix Addition and Shared Memory Analysis
+For matrix addition, shared memory provides minimal benefit. Here's why:
+Each thread loads exactly two elements (one from each input matrix), performs one addition, and stores one result. The arithmetic intensity is very low (1 FLOP per 3 memory accesses).
+There's no data reuse between threads - each thread accesses unique elements. Unlike matrix multiplication where tiles are reused across multiple computations, matrix addition has no commonality between threads to exploit.
+Using shared memory would actually hurt performance because you'd add extra steps (load to shared, synchronize, then compute) without any benefit from data reuse.
+
+Q2)
+8×8 Matrix Multiplication with Different Tiling
+For 2×2 tiling:
+
+Each tile loads 2×2 = 4 elements from each matrix
+For 8×8 result, need (8/2)² = 16 tile computations
+Global memory accesses: 16 × (4+4) = 128 loads
+
+For 4×4 tiling:
+
+Each tile loads 4×4 = 16 elements from each matrix
+For 8×8 result, need (8/4)² = 4 tile computations
+Global memory accesses: 4 × (16+16) = 128 loads
+
+Wait, that's the same! Actually, the reduction comes from reuse within blocks:
+
+2×2 tiling: Each element loaded is used 2 times
+4×4 tiling: Each element loaded is used 4 times
+
+The bandwidth reduction factor is proportional to tile dimension (N for N×N tiles).
+
+Q3)
+Incorrect Execution with __syncthreads()
+If you forget to use __syncthreads() in Figure 5.7's tiled multiplication:
+Threads in a warp might start computing the dot product before all threads have finished loading the tile data into shared memory. This creates a race condition where some threads read uninitialized or partially written shared memory values.
+Two __syncthreads() calls are needed:
+
+After loading tiles - ensures all data is in shared memory before computation
+Before loading next tile - ensures all threads are done using current tile data
+
+Q4)
+Shared Memory vs Registers Trade-off
+One valuable use case for shared memory over registers (assuming unlimited capacity):
+Parallel reduction operations (sum, max, min across thread block):
+
+__shared__ float sdata[BLOCK_SIZE];
+sdata[tid] = input[tid];
+__syncthreads();
+
+for (int s = blockDim.x/2; s > 0; s >>= 1) {
+    if (tid < s) {
+        sdata[tid] += sdata[tid + s];
+    }
+    __syncthreads();
+}
+Registers can't be indexed dynamically or accessed by other threads. Shared memory allows threads to cooperate and share intermediate results, enabling efficient parallel algorithms that would be impossible with registers alone. The dynamic indexing (tid + s) and inter-thread communication make shared memory essential here despite registers being faster.

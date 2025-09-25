@@ -1,0 +1,37 @@
+Q1)
+My reaction is not convonced because when using tiled matrix multiplication on a GPU with 1024 thread blocks, each thread in each block calculates one element of the result matrix. For two 1024×1024 matrices, we have 1,048,576 elements to compute. With 1024 threads per block on the G80 (which has a maximum of 512 threads per block actually), we will need at least 1024 blocks to cover all elements. But more importantly, each thread needs to perform 1024 multiply-accumulate operations for its element, not just one. The student seems to be confusing the parallelization of elements with the actual computation required per element.
+
+Q2)
+The kernel will work correctly only when BLOCK_SIZE evenly divides both A_width and A_height.
+The problem in the question is that:
+
+baseIdx += (blockIdx.y * BLOCK_SIZE + threadIdx.y) * A_width;
+
+When BLOCK_SIZE doesn't evenly divide the matrix dimensions, the blocks at the edges will try to access memory beyond the matrix bounds. For example, if A_width is 100 and BLOCK_SIZE is 16, the last block in each row will have threads trying to access elements beyond column 100.
+
+Q3)
+To fix the code for all BLOCK_SIZE values:
+Add boundary checking before accessing the arrays. Here's the fix:
+cuda__global__ void 
+BlockTranspose(float* A_elements, int A_width, int A_height) 
+{
+    __shared__ float blockA[BLOCK_SIZE][BLOCK_SIZE];
+    
+    int baseIdx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+    baseIdx += (blockIdx.y * BLOCK_SIZE + threadIdx.y) * A_width;
+    
+    if ((blockIdx.x * BLOCK_SIZE + threadIdx.x) < A_width && 
+        (blockIdx.y * BLOCK_SIZE + threadIdx.y) < A_height) {
+        blockA[threadIdx.y][threadIdx.x] = A_elements[baseIdx];
+    }
+    
+    __syncthreads();
+    
+    int writeCol = blockIdx.y * BLOCK_SIZE + threadIdx.x;
+    int writeRow = blockIdx.x * BLOCK_SIZE + threadIdx.y;
+    
+    if (writeCol < A_height && writeRow < A_width) {
+        A_elements[writeCol * A_width + writeRow] = blockA[threadIdx.x][threadIdx.y];
+    }
+}
+The key changes are adding conditional checks before both reading from and writing to global memory to ensure we don't access out-of-bounds memory when the matrix dimensions aren't multiples of BLOCK_SIZE.
